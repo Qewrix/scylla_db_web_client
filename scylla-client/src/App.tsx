@@ -56,15 +56,15 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Server-side filtering and sorting state (database queries)
-  // Firebase-style filter state
+  // Server-side filtering state (database queries)
   const [filterColumn, setFilterColumn] = useState<string>('');
   const [filterOperator, setFilterOperator] = useState<string>('=');
   const [filterValue, setFilterValue] = useState<string>('');
-  const [orderByColumn, setOrderByColumn] = useState<string>('');
-  const [orderByDirection, setOrderByDirection] = useState<string>('ASC');
-  const [allowFiltering, setAllowFiltering] = useState<boolean>(false);
   const [queryLimit, setQueryLimit] = useState<number>(1000); // Max results to fetch
+
+  // Client-side sorting state (sorts data already loaded in browser)
+  const [sortColumn, setSortColumn] = useState<string>('');
+  const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('ASC');
 
   // Load API key from localStorage on mount
   useEffect(() => {
@@ -163,12 +163,6 @@ function App() {
         params.allow_filtering = true; // Auto-enable for any filtering
       }
 
-      // Add ORDER BY if provided
-      if (applyFilters && orderByColumn) {
-        params.order_by = `${orderByColumn} ${orderByDirection}`;
-        params.allow_filtering = true; // Auto-enable for sorting
-      }
-
       // Build count params with same filters
       const countParams: any = {};
       if (whereClause) {
@@ -202,9 +196,8 @@ function App() {
         setFilterColumn('');
         setFilterOperator('=');
         setFilterValue('');
-        setOrderByColumn('');
-        setOrderByDirection('ASC');
-        setAllowFiltering(false);
+        setSortColumn('');
+        setSortDirection('ASC');
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message);
@@ -230,7 +223,7 @@ function App() {
     if (tableData?.next_page_state && selectedTable) {
       setPageHistory([...pageHistory, currentPageState || '']);
       // Reapply filters if any are active
-      const hasFilters = Boolean((filterColumn && filterValue) || orderByColumn);
+      const hasFilters = Boolean(filterColumn && filterValue);
       fetchTableData(selectedTable.keyspace, selectedTable.table, tableData.next_page_state, hasFilters);
     }
   };
@@ -241,7 +234,7 @@ function App() {
       const prevState = newHistory.pop() || null;
       setPageHistory(newHistory);
       // Reapply filters if any are active
-      const hasFilters = Boolean((filterColumn && filterValue) || orderByColumn);
+      const hasFilters = Boolean(filterColumn && filterValue);
       fetchTableData(selectedTable.keyspace, selectedTable.table, prevState, hasFilters);
     }
   };
@@ -265,13 +258,55 @@ function App() {
     setFilterColumn('');
     setFilterOperator('=');
     setFilterValue('');
-    setOrderByColumn('');
-    setOrderByDirection('ASC');
-    setAllowFiltering(false);
+    setSortColumn('');
+    setSortDirection('ASC');
     if (selectedTable) {
       setPageHistory([]);
       fetchTableData(selectedTable.keyspace, selectedTable.table, null, false);
     }
+  };
+
+
+  // Client-side sorting - sorts data already loaded in the browser
+  const handleColumnSort = (columnName: string) => {
+    if (sortColumn === columnName) {
+      // Toggle sort direction if clicking the same column
+      setSortDirection(sortDirection === 'ASC' ? 'DESC' : 'ASC');
+    } else {
+      // New column - sort ascending
+      setSortColumn(columnName);
+      setSortDirection('ASC');
+    }
+  };
+
+  // Get sorted table data for display
+  const getSortedTableData = (): TableRow[] => {
+    if (!tableData || !sortColumn) return tableData?.rows || [];
+
+    const sorted = [...tableData.rows].sort((a, b) => {
+      const aVal = a[sortColumn];
+      const bVal = b[sortColumn];
+
+      // Handle null/undefined
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+
+      // Try to parse as numbers if possible
+      const aNum = Number(aVal);
+      const bNum = Number(bVal);
+
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        // Numeric sort
+        return sortDirection === 'ASC' ? aNum - bNum : bNum - aNum;
+      } else {
+        // String sort
+        const comparison = String(aVal).localeCompare(String(bVal));
+        return sortDirection === 'ASC' ? comparison : -comparison;
+      }
+    });
+
+    return sorted;
   };
 
   const executeQuery = async () => {
@@ -637,74 +672,21 @@ function App() {
                     />
                   </div>
 
-                  {/* ORDER BY Row */}
-                  <div className="flex gap-2 items-center">
-                    <label className="text-sm text-gray-700 font-medium w-20">Sort by:</label>
-                    <select
-                      value={orderByColumn}
-                      onChange={(e) => {
-                        setOrderByColumn(e.target.value);
-                        // Auto-apply if a column is selected
-                        if (e.target.value && selectedTable) {
-                          setTimeout(() => {
-                            setPageHistory([]);
-                            fetchTableData(selectedTable.keyspace, selectedTable.table, null, true);
-                          }, 100);
-                        }
-                      }}
-                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded bg-white"
-                    >
-                      <option value="">No sorting...</option>
-                      {selectedTable.columns.map(col => (
-                        <option key={col.name} value={col.name}>{col.name}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={orderByDirection}
-                      onChange={(e) => {
-                        setOrderByDirection(e.target.value);
-                        // Auto-apply if sorting column is selected
-                        if (orderByColumn && selectedTable) {
-                          setTimeout(() => {
-                            setPageHistory([]);
-                            fetchTableData(selectedTable.keyspace, selectedTable.table, null, true);
-                          }, 100);
-                        }
-                      }}
-                      className="px-3 py-2 text-sm border border-gray-300 rounded bg-white"
-                      disabled={!orderByColumn}
-                    >
-                      <option value="ASC">ASC ↑</option>
-                      <option value="DESC">DESC ↓</option>
-                    </select>
-                  </div>
 
                   {/* Query Limit */}
-                  <div className="flex gap-2 items-center">
-                    <label className="text-sm text-gray-700 font-medium w-24">Query Limit:</label>
-                    <input
-                      type="number"
-                      value={queryLimit}
-                      onChange={(e) => setQueryLimit(Math.max(1, parseInt(e.target.value) || 1000))}
-                      min="1"
-                      max="1000000"
-                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded"
-                      placeholder="Max results..."
-                    />
-                    <span className="text-xs text-gray-500">Max results to fetch</span>
-                  </div>
-
-                  {/* ALLOW FILTERING + Buttons */}
                   <div className="flex gap-2 items-center justify-between">
-                    <label className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-300 rounded cursor-pointer">
+                    <div className="flex gap-2 items-center">
+                      <label className="text-sm text-gray-700 font-medium">Max results:</label>
                       <input
-                        type="checkbox"
-                        checked={allowFiltering}
-                        onChange={(e) => setAllowFiltering(e.target.checked)}
-                        className="rounded"
+                        type="number"
+                        value={queryLimit}
+                        onChange={(e) => setQueryLimit(Math.max(1, parseInt(e.target.value) || 1000))}
+                        min="1"
+                        max="1000000"
+                        className="w-32 px-3 py-2 text-sm border border-gray-300 rounded"
+                        placeholder="Max results..."
                       />
-                      <span className="text-gray-700">ALLOW FILTERING</span>
-                    </label>
+                    </div>
 
                     <div className="flex gap-2">
                       <button
@@ -724,7 +706,7 @@ function App() {
                   </div>
 
                   <p className="text-xs text-gray-500">
-                    ⚠️ Note: Filters query the entire database. Use partition keys for best performance.
+                    💡 Tip: Filter by partition keys for best performance. Click column headers to sort loaded data.
                   </p>
                 </div>
               </div>
@@ -766,15 +748,23 @@ function App() {
                           {selectedTable.columns.map(col => (
                             <th
                               key={col.name}
-                              className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+                              onClick={() => handleColumnSort(col.name)}
+                              className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 select-none"
                             >
-                              {col.name}
+                              <div className="flex items-center gap-1">
+                                {col.name}
+                                {sortColumn === col.name && (
+                                  <span className="text-blue-600 font-bold">
+                                    {sortDirection === 'ASC' ? '↑' : '↓'}
+                                  </span>
+                                )}
+                              </div>
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {tableData.rows.map((row, idx) => (
+                        {getSortedTableData().map((row, idx) => (
                           <tr key={idx} className="hover:bg-gray-50">
                             {selectedTable.columns.map(col => (
                               <td key={col.name} className="px-4 py-2 whitespace-nowrap text-gray-700">
