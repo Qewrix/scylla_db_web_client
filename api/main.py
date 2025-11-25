@@ -20,7 +20,7 @@ app = FastAPI(title="ScyllaDB Web Client API", lifespan=lifespan)
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origin_regex=".*",  # Allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

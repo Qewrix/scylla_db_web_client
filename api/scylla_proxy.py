@@ -28,7 +28,7 @@ except ValueError:
 DEFAULT_DEV_PROXY_MAPPING: Dict[str, Tuple[str, int]] = {
     "172.27.0.2": ("localhost", 9037),
     "172.27.0.3": ("localhost", 9038),
-    "172.27.0.5": ("localhost", 9039),
+    "172.27.0.4": ("localhost", 9039),
 }
 
 
