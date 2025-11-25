@@ -43,7 +43,6 @@ function App() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string>('');
-  const [token, setToken] = useState<string>('');
   const [authView, setAuthView] = useState<'login' | 'signup'>('login');
   const [view, setView] = useState<'dashboard' | 'explorer'>('dashboard');
   const [stats, setStats] = useState<SystemStats | null>(null);
@@ -77,7 +76,6 @@ function App() {
     const savedUsername = localStorage.getItem('scylla_username');
 
     if (savedToken && savedUsername) {
-      setToken(savedToken);
       setUsername(savedUsername);
       setIsAuthenticated(true);
       setupAxiosInterceptor(savedToken);
@@ -319,7 +317,6 @@ function App() {
 
   // Authentication handlers
   const handleLogin = (authToken: string, user: string) => {
-    setToken(authToken);
     setUsername(user);
     setIsAuthenticated(true);
     localStorage.setItem('scylla_auth_token', authToken);
@@ -330,7 +327,6 @@ function App() {
   };
 
   const handleLogout = () => {
-    setToken('');
     setUsername('');
     setIsAuthenticated(false);
     localStorage.removeItem('scylla_auth_token');
