@@ -62,6 +62,10 @@ function App() {
 
   // Server-side filtering and sorting state (database queries)
   const [whereClause, setWhereClause] = useState<string>('');
+  // Firebase-style filter state
+  const [filterColumn, setFilterColumn] = useState<string>('');
+  const [filterOperator, setFilterOperator] = useState<string>('=');
+  const [filterValue, setFilterValue] = useState<string>('');
   const [orderBy, setOrderBy] = useState<string>('');
   const [allowFiltering, setAllowFiltering] = useState<boolean>(false);
 
@@ -226,7 +230,9 @@ function App() {
   };
 
   const clearServerSideFilters = () => {
-    setWhereClause('');
+    setFilterColumn('');
+    setFilterOperator('=');
+    setFilterValue('');
     setOrderBy('');
     setAllowFiltering(false);
     if (selectedTable) {
@@ -556,9 +562,16 @@ function App() {
               {tableData.rows.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-medium text-gray-600">
-                      Data (showing {tableData.count} of {rowCount?.toLocaleString() || '?'} total rows)
-                    </h3>
+                    <div className="flex items-center gap-3">
+                      <h3 className="text-sm font-medium text-gray-600">
+                        Data (showing {tableData.count} of {rowCount?.toLocaleString() || '?'} total rows)
+                      </h3>
+                      {rowCount && (
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                          Page {pageHistory.length + 1} / {Math.ceil(rowCount / pageSize)}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex gap-2">
                       <button
                         onClick={handlePreviousPage}
