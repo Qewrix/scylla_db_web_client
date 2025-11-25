@@ -258,12 +258,27 @@ async def get_table_rows(
 
 
 @router.get("/keyspaces/{keyspace}/tables/{table}/count")
-async def get_table_count(keyspace: str, table: str, api_key: str = Depends(get_api_key)) -> Dict[str, Any]:
-    """Estimate the row count for a table."""
+async def get_table_count(
+    keyspace: str, 
+    table: str, 
+    where_clause: str = None,
+    allow_filtering: bool = False,
+    api_key: str = Depends(get_api_key)
+) -> Dict[str, Any]:
+    """Estimate the row count for a table, optionally with filters applied."""
     session = get_session()
     try:
-        # Try to get estimate from system tables
+        # Build count query
         count_query = f"SELECT COUNT(*) FROM {keyspace}.{table}"
+        
+        # Add WHERE clause if provided
+        if where_clause:
+            count_query += f" WHERE {where_clause}"
+        
+        # Add ALLOW FILTERING if needed
+        if allow_filtering and where_clause:
+            count_query += " ALLOW FILTERING"
+        
         result = session.execute(count_query)
         count = result.one()[0] if result else 0
         
@@ -271,7 +286,8 @@ async def get_table_count(keyspace: str, table: str, api_key: str = Depends(get_
             "keyspace": keyspace,
             "table": table,
             "estimated_count": count,
-            "is_estimate": False
+            "is_estimate": False,
+            "filtered": where_clause is not None
         }
     except Exception as e:
         # If COUNT fails, return unknown
@@ -280,5 +296,6 @@ async def get_table_count(keyspace: str, table: str, api_key: str = Depends(get_
             "table": table,
             "estimated_count": 0,
             "is_estimate": True,
+            "filtered": where_clause is not None,
             "error": str(e)
         }

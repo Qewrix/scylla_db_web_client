@@ -74,7 +74,20 @@ All implementation details documented in `/api/reports/`:
 4. `4_enhanced_frontend_ui.md`
 5. `5_codebase_sanitization.md`
 6. `6_table_sorting_filtering.md`
-7. `7_server_side_filtering_sorting.md`
+  - Implemented client-side table sorting and filtering for the data explorer
+
+### 7. Server-Side Filtering & Sorting (2025-11-25)
+- [7_server_side_filtering_sorting.md](./7_server_side_filtering_sorting.md)
+  - Enhanced get_table_rows endpoint with WHERE clause, ORDER BY, and ALLOW FILTERING support
+  - Updated frontend to support server-side filtering and sorting
+
+### 8. Firebase-Style Filters & Performance (2025-11-25)
+- [8_firebase_style_filters_improvements.md](./8_firebase_style_filters_improvements.md)
+  - Implemented Firebase-style filter UI with dropdown controls
+  - Added smart query building with automatic data type detection
+  - Added auto-apply sorting functionality
+  - Optimized dashboard performance with parallel queries
+  - Enhanced pagination info display
 
 ## Post-Implementation Notes
 - Environment variables properly configured for both dev and production

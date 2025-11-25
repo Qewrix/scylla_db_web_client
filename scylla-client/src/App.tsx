@@ -56,18 +56,15 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Client-side sorting state (for current page)
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-
   // Server-side filtering and sorting state (database queries)
-  const [whereClause, setWhereClause] = useState<string>('');
   // Firebase-style filter state
   const [filterColumn, setFilterColumn] = useState<string>('');
   const [filterOperator, setFilterOperator] = useState<string>('=');
   const [filterValue, setFilterValue] = useState<string>('');
-  const [orderBy, setOrderBy] = useState<string>('');
+  const [orderByColumn, setOrderByColumn] = useState<string>('');
+  const [orderByDirection, setOrderByDirection] = useState<string>('ASC');
   const [allowFiltering, setAllowFiltering] = useState<boolean>(false);
+  const [queryLimit, setQueryLimit] = useState<number>(1000); // Max results to fetch
 
   // Load API key from localStorage on mount
   useEffect(() => {
@@ -140,21 +137,49 @@ function App() {
     try {
       // Build query parameters
       const params: any = {
-        page_size: pageSize,
+        page_size: Math.min(pageSize, queryLimit), // Don't exceed query limit
         page_state: pageState || undefined
       };
 
-      // Add server-side filters if applying
-      if (applyFilters) {
-        if (whereClause) params.where_clause = whereClause;
-        if (orderBy) params.order_by = orderBy;
+      let whereClause = '';
+
+      // Build WHERE clause from filter UI if applying
+      if (applyFilters && filterColumn && filterValue) {
+        // Detect if value is a number (int or decimal)
+        const isNumber = /^-?\d+(\.\d+)?$/.test(filterValue.trim());
+
+        // Build WHERE clause based on operator
+        if (filterOperator === 'CONTAINS') {
+          // For CONTAINS, we need ALLOW FILTERING
+          whereClause = `${filterColumn} LIKE '%${filterValue}%'`;
+          params.allow_filtering = true;
+        } else {
+          // Quote the value only if it's not a number
+          const quotedValue = isNumber ? filterValue : `'${filterValue}'`;
+          whereClause = `${filterColumn} ${filterOperator} ${quotedValue}`;
+        }
+
+        params.where_clause = whereClause;
         if (allowFiltering) params.allow_filtering = true;
+      }
+
+      // Add ORDER BY if provided
+      if (applyFilters && orderByColumn) {
+        params.order_by = `${orderByColumn} ${orderByDirection}`;
+        if (allowFiltering) params.allow_filtering = true;
+      }
+
+      // Build count params with same filters
+      const countParams: any = {};
+      if (whereClause) {
+        countParams.where_clause = whereClause;
+        if (allowFiltering) countParams.allow_filtering = true;
       }
 
       const [schemaRes, rowsRes, countRes] = await Promise.all([
         axios.get(`${API_BASE}/explorer/keyspaces/${keyspace}/tables/${table}`),
         axios.get(`${API_BASE}/explorer/keyspaces/${keyspace}/tables/${table}/rows`, { params }),
-        axios.get(`${API_BASE}/explorer/keyspaces/${keyspace}/tables/${table}/count`)
+        axios.get(`${API_BASE}/explorer/keyspaces/${keyspace}/tables/${table}/count`, { params: countParams })
       ]);
 
       setSelectedTable(schemaRes.data);
@@ -167,15 +192,18 @@ function App() {
       // Auto-populate CQL query with actual executed query
       let cqlQuery = rowsRes.data.query_executed || `SELECT * FROM ${keyspace}.${table}`;
       if (!cqlQuery.includes('LIMIT')) {
-        cqlQuery += ` LIMIT ${pageSize}`;
+        cqlQuery += ` LIMIT ${Math.min(pageSize, queryLimit)}`;
       }
       cqlQuery += ';';
       setQuery(cqlQuery);
 
-      // Reset server-side filters for new table
+      // Reset filters for new table (but not when paginating or applying filters)
       if (!pageState && !applyFilters) {
-        setWhereClause('');
-        setOrderBy('');
+        setFilterColumn('');
+        setFilterOperator('=');
+        setFilterValue('');
+        setOrderByColumn('');
+        setOrderByDirection('ASC');
         setAllowFiltering(false);
       }
     } catch (err: any) {
@@ -201,7 +229,9 @@ function App() {
   const handleNextPage = () => {
     if (tableData?.next_page_state && selectedTable) {
       setPageHistory([...pageHistory, currentPageState || '']);
-      fetchTableData(selectedTable.keyspace, selectedTable.table, tableData.next_page_state);
+      // Reapply filters if any are active
+      const hasFilters = Boolean((filterColumn && filterValue) || orderByColumn);
+      fetchTableData(selectedTable.keyspace, selectedTable.table, tableData.next_page_state, hasFilters);
     }
   };
 
@@ -210,7 +240,9 @@ function App() {
       const newHistory = [...pageHistory];
       const prevState = newHistory.pop() || null;
       setPageHistory(newHistory);
-      fetchTableData(selectedTable.keyspace, selectedTable.table, prevState);
+      // Reapply filters if any are active
+      const hasFilters = Boolean((filterColumn && filterValue) || orderByColumn);
+      fetchTableData(selectedTable.keyspace, selectedTable.table, prevState, hasFilters);
     }
   };
 
@@ -233,7 +265,8 @@ function App() {
     setFilterColumn('');
     setFilterOperator('=');
     setFilterValue('');
-    setOrderBy('');
+    setOrderByColumn('');
+    setOrderByDirection('ASC');
     setAllowFiltering(false);
     if (selectedTable) {
       setPageHistory([]);
@@ -556,6 +589,143 @@ function App() {
                       )}
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Firebase-Style Filters */}
+              <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <span>🔍</span>
+                  Filters (Database-Level)
+                </h3>
+                <div className="space-y-3">
+                  {/* Filter Row */}
+                  <div className="flex gap-2 items-center">
+                    <select
+                      value={filterColumn}
+                      onChange={(e) => setFilterColumn(e.target.value)}
+                      className="px-3 py-2 text-sm border border-gray-300 rounded bg-white"
+                    >
+                      <option value="">Select column...</option>
+                      {selectedTable.columns.map(col => (
+                        <option key={col.name} value={col.name}>{col.name}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={filterOperator}
+                      onChange={(e) => setFilterOperator(e.target.value)}
+                      className="px-3 py-2 text-sm border border-gray-300 rounded bg-white"
+                      disabled={!filterColumn}
+                    >
+                      <option value="=">=</option>
+                      <option value="!=">!=</option>
+                      <option value=">">&gt;</option>
+                      <option value="<">&lt;</option>
+                      <option value=">=">&gt;=</option>
+                      <option value="<=">&lt;=</option>
+                      <option value="CONTAINS">contains</option>
+                    </select>
+
+                    <input
+                      type="text"
+                      value={filterValue}
+                      onChange={(e) => setFilterValue(e.target.value)}
+                      placeholder="Value..."
+                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded"
+                      disabled={!filterColumn}
+                    />
+                  </div>
+
+                  {/* ORDER BY Row */}
+                  <div className="flex gap-2 items-center">
+                    <label className="text-sm text-gray-700 font-medium w-20">Sort by:</label>
+                    <select
+                      value={orderByColumn}
+                      onChange={(e) => {
+                        setOrderByColumn(e.target.value);
+                        // Auto-apply if a column is selected
+                        if (e.target.value && selectedTable) {
+                          setTimeout(() => {
+                            setPageHistory([]);
+                            fetchTableData(selectedTable.keyspace, selectedTable.table, null, true);
+                          }, 100);
+                        }
+                      }}
+                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded bg-white"
+                    >
+                      <option value="">No sorting...</option>
+                      {selectedTable.columns.map(col => (
+                        <option key={col.name} value={col.name}>{col.name}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={orderByDirection}
+                      onChange={(e) => {
+                        setOrderByDirection(e.target.value);
+                        // Auto-apply if sorting column is selected
+                        if (orderByColumn && selectedTable) {
+                          setTimeout(() => {
+                            setPageHistory([]);
+                            fetchTableData(selectedTable.keyspace, selectedTable.table, null, true);
+                          }, 100);
+                        }
+                      }}
+                      className="px-3 py-2 text-sm border border-gray-300 rounded bg-white"
+                      disabled={!orderByColumn}
+                    >
+                      <option value="ASC">ASC ↑</option>
+                      <option value="DESC">DESC ↓</option>
+                    </select>
+                  </div>
+
+                  {/* Query Limit */}
+                  <div className="flex gap-2 items-center">
+                    <label className="text-sm text-gray-700 font-medium w-24">Query Limit:</label>
+                    <input
+                      type="number"
+                      value={queryLimit}
+                      onChange={(e) => setQueryLimit(Math.max(1, parseInt(e.target.value) || 1000))}
+                      min="1"
+                      max="1000000"
+                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded"
+                      placeholder="Max results..."
+                    />
+                    <span className="text-xs text-gray-500">Max results to fetch</span>
+                  </div>
+
+                  {/* ALLOW FILTERING + Buttons */}
+                  <div className="flex gap-2 items-center justify-between">
+                    <label className="flex items-center gap-2 px-3 py-2 text-sm bg-white border border-gray-300 rounded cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allowFiltering}
+                        onChange={(e) => setAllowFiltering(e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-gray-700">ALLOW FILTERING</span>
+                    </label>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={applyServerSideFilters}
+                        disabled={!filterColumn || !filterValue}
+                        className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Apply Filter
+                      </button>
+                      <button
+                        onClick={clearServerSideFilters}
+                        className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-gray-500">
+                    ⚠️ Note: Filters query the entire database. Use partition keys for best performance.
+                  </p>
                 </div>
               </div>
 
