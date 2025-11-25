@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Dict, Any
 
 from database import get_session
+from auth import get_api_key
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -11,7 +12,7 @@ class QueryRequest(BaseModel):
     cql: str
 
 
-@router.post("/execute")
+@router.post("/execute", dependencies=[Depends(get_api_key)])
 async def execute_query(request: QueryRequest) -> Dict[str, Any]:
     """Execute a raw CQL query."""
     session = get_session()

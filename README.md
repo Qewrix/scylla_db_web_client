@@ -46,13 +46,18 @@ cd api
 cp .env.example .env
 
 # For development (using proxy like recommender system):
-# ENVIRONMENT=dev
-# (Uses default proxy mapping: 64.71.146.81:9037-9039)
+ENVIRONMENT=dev
+SCYLLA_PROXY_DEFAULT_HOST=your-proxy-host.example.com
+SCYLLA_PROXY_DEFAULT_PORT=9037
+# See .env.example for full proxy configuration
 
 # For production (direct connection):
-# ENVIRONMENT=prod
-# SCYLLA_HOST=your-scylla-host
-# SCYLLA_PORT=9042
+ENVIRONMENT=prod
+SCYLLA_HOST=your-scylla-host
+SCYLLA_PORT=9042
+
+# Set your API key
+API_KEYS=your-secret-api-key-here
 
 # Install dependencies
 pip install -r requirements.txt

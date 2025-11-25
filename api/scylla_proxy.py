@@ -2,12 +2,15 @@ import ipaddress
 import json
 import logging
 import os
+from dotenv import load_dotenv
 from typing import Dict, Tuple
 
 from cassandra.connection import DefaultEndPoint, DefaultEndPointFactory
 from cassandra.policies import AddressTranslator
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 DEFAULT_PROXY_HOST = os.getenv("SCYLLA_PROXY_DEFAULT_HOST")
 _default_proxy_port_raw = os.getenv("SCYLLA_PROXY_DEFAULT_PORT")
@@ -20,11 +23,12 @@ except ValueError:
     )
     DEFAULT_PROXY_PORT = None
 
-# Mapping of the internal Scylla node IPs -> (public proxy host, public proxy port)
+# Default proxy mapping for development
+# This should be overridden via SCYLLA_PROXY_MAPPING environment variable in production
 DEFAULT_DEV_PROXY_MAPPING: Dict[str, Tuple[str, int]] = {
-    "172.27.0.2": ("64.71.146.81", 9037),
-    "172.27.0.3": ("64.71.146.81", 9038),
-    "172.27.0.5": ("64.71.146.81", 9039),
+    "172.27.0.2": ("localhost", 9037),
+    "172.27.0.3": ("localhost", 9038),
+    "172.27.0.5": ("localhost", 9039),
 }
 
 
