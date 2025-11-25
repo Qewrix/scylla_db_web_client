@@ -10,6 +10,9 @@ router = APIRouter(prefix="/explorer", tags=["explorer"])
 @router.get("/stats")
 async def get_system_stats(api_key: str = Depends(get_api_key)) -> Dict[str, Any]:
     """Get system-wide statistics."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    
     session = get_session()
     try:
         # Get all keyspaces
@@ -22,23 +25,28 @@ async def get_system_stats(api_key: str = Depends(get_api_key)) -> Dict[str, Any
         system_keyspaces = [ks for ks in all_keyspaces if ks.startswith('system')]
         user_keyspaces = [ks for ks in all_keyspaces if not ks.startswith('system')]
         
-        # Get table counts for each keyspace
-        keyspace_stats = []
-        total_tables = 0
-        
-        for ks in all_keyspaces:
+        # Fetch table counts in parallel
+        def get_table_count(keyspace_name):
             tables_result = session.execute(
                 "SELECT table_name FROM system_schema.tables WHERE keyspace_name = %s",
-                [ks]
+                [keyspace_name]
             )
             table_count = len(list(tables_result))
-            total_tables += table_count
-            
-            keyspace_stats.append({
-                "name": ks,
+            return {
+                "name": keyspace_name,
                 "table_count": table_count,
-                "is_system": ks.startswith('system')
-            })
+                "is_system": keyspace_name.startswith('system')
+            }
+        
+        # Run queries in parallel using thread pool
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            loop = asyncio.get_event_loop()
+            keyspace_stats = await loop.run_in_executor(
+                None,
+                lambda: list(executor.map(get_table_count, all_keyspaces))
+            )
+        
+        total_tables = sum(ks['table_count'] for ks in keyspace_stats)
         
         # Sort by table count (descending) and name
         keyspace_stats.sort(key=lambda x: (-x['table_count'], x['name']))

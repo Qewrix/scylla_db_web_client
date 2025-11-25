@@ -56,10 +56,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Client-side sorting and filtering state (for current page)
+  // Client-side sorting state (for current page)
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [quickFilter, setQuickFilter] = useState<string>('');
 
   // Server-side filtering and sorting state (database queries)
   const [whereClause, setWhereClause] = useState<string>('');
@@ -169,11 +168,8 @@ function App() {
       cqlQuery += ';';
       setQuery(cqlQuery);
 
-      // Reset client-side sorting and filtering for new table
+      // Reset server-side filters for new table
       if (!pageState && !applyFilters) {
-        setSortColumn(null);
-        setSortDirection('asc');
-        setQuickFilter('');
         setWhereClause('');
         setOrderBy('');
         setAllowFiltering(false);
@@ -222,45 +218,21 @@ function App() {
     }
   };
 
-  const handleSort = (columnName: string) => {
-    if (sortColumn === columnName) {
-      // Toggle direction
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortColumn(columnName);
-      setSortDirection('asc');
+  const applyServerSideFilters = () => {
+    if (selectedTable) {
+      setPageHistory([]);
+      fetchTableData(selectedTable.keyspace, selectedTable.table, null, true);
     }
   };
 
-  const getFilteredAndSortedRows = () => {
-    if (!tableData) return [];
-
-    let rows = [...tableData.rows];
-
-    // Apply client-side quick filtering
-    if (quickFilter) {
-      rows = rows.filter(row =>
-        Object.values(row).some(val =>
-          String(val).toLowerCase().includes(quickFilter.toLowerCase())
-        )
-      );
+  const clearServerSideFilters = () => {
+    setWhereClause('');
+    setOrderBy('');
+    setAllowFiltering(false);
+    if (selectedTable) {
+      setPageHistory([]);
+      fetchTableData(selectedTable.keyspace, selectedTable.table, null, false);
     }
-
-    // Apply client-side sorting
-    if (sortColumn) {
-      rows.sort((a, b) => {
-        const aVal = a[sortColumn];
-        const bVal = b[sortColumn];
-
-        if (aVal === null || aVal === undefined) return 1;
-        if (bVal === null || bVal === undefined) return -1;
-
-        const comparison = String(aVal).localeCompare(String(bVal), undefined, { numeric: true });
-        return sortDirection === 'asc' ? comparison : -comparison;
-      });
-    }
-
-    return rows;
   };
 
   const executeQuery = async () => {
@@ -584,18 +556,9 @@ function App() {
               {tableData.rows.length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2 flex-1">
-                      <h3 className="text-sm font-medium text-gray-600">
-                        Data (showing {getFilteredAndSortedRows().length} rows)
-                      </h3>
-                      <input
-                        type="text"
-                        value={quickFilter}
-                        onChange={(e) => setQuickFilter(e.target.value)}
-                        placeholder="Quick filter (current page only)..."
-                        className="px-3 py-1 text-sm border border-gray-300 rounded flex-1 max-w-md"
-                      />
-                    </div>
+                    <h3 className="text-sm font-medium text-gray-600">
+                      Data (showing {tableData.count} of {rowCount?.toLocaleString() || '?'} total rows)
+                    </h3>
                     <div className="flex gap-2">
                       <button
                         onClick={handlePreviousPage}
@@ -620,23 +583,15 @@ function App() {
                           {selectedTable.columns.map(col => (
                             <th
                               key={col.name}
-                              className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 select-none"
-                              onClick={() => handleSort(col.name)}
+                              className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase"
                             >
-                              <div className="flex items-center gap-1">
-                                <span>{col.name}</span>
-                                {sortColumn === col.name && (
-                                  <span className="text-blue-600">
-                                    {sortDirection === 'asc' ? '↑' : '↓'}
-                                  </span>
-                                )}
-                              </div>
+                              {col.name}
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {getFilteredAndSortedRows().map((row, idx) => (
+                        {tableData.rows.map((row, idx) => (
                           <tr key={idx} className="hover:bg-gray-50">
                             {selectedTable.columns.map(col => (
                               <td key={col.name} className="px-4 py-2 whitespace-nowrap text-gray-700">
