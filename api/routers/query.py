@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Any
 
 from database import get_session
-from auth import get_api_key
+from auth import get_current_user
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -12,8 +12,8 @@ class QueryRequest(BaseModel):
     cql: str
 
 
-@router.post("/execute", dependencies=[Depends(get_api_key)])
-async def execute_query(request: QueryRequest) -> Dict[str, Any]:
+@router.post("/execute")
+async def execute_query(request: QueryRequest, current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """Execute a raw CQL query."""
     session = get_session()
     

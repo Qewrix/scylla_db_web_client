@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Database, Table, Play, ChevronRight, ChevronDown, Home, Key, RefreshCw } from 'lucide-react';
+import { Database, Table, Play, ChevronRight, ChevronDown, Home, LogOut, RefreshCw } from 'lucide-react';
 import axios from 'axios';
+import { Login } from './components/Login';
+import { Signup } from './components/Signup';
 import './index.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
@@ -38,8 +40,11 @@ interface PaginatedData {
 }
 
 function App() {
-  const [apiKey, setApiKey] = useState<string>('');
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState<string>('');
+  const [token, setToken] = useState<string>('');
+  const [authView, setAuthView] = useState<'login' | 'signup'>('login');
   const [view, setView] = useState<'dashboard' | 'explorer'>('dashboard');
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [keyspaces, setKeyspaces] = useState<string[]>([]);
@@ -66,37 +71,26 @@ function App() {
   const [sortColumn, setSortColumn] = useState<string>('');
   const [sortDirection, setSortDirection] = useState<'ASC' | 'DESC'>('ASC');
 
-  // Load API key from localStorage on mount
+  // Load auth token from localStorage on mount
   useEffect(() => {
-    const savedKey = localStorage.getItem('scylla_api_key');
-    const envKey = import.meta.env.VITE_API_KEY;
+    const savedToken = localStorage.getItem('scylla_auth_token');
+    const savedUsername = localStorage.getItem('scylla_username');
 
-    if (savedKey) {
-      setApiKey(savedKey);
-      setupAxiosInterceptor(savedKey);
-    } else if (envKey) {
-      setApiKey(envKey);
-      setupAxiosInterceptor(envKey);
-      localStorage.setItem('scylla_api_key', envKey);
-    } else {
-      setShowApiKeyInput(true);
+    if (savedToken && savedUsername) {
+      setToken(savedToken);
+      setUsername(savedUsername);
+      setIsAuthenticated(true);
+      setupAxiosInterceptor(savedToken);
     }
   }, []);
 
-  const setupAxiosInterceptor = (key: string) => {
+  const setupAxiosInterceptor = (authToken: string) => {
     axios.interceptors.request.use(config => {
-      if (key) {
-        config.headers['X-API-Key'] = key;
+      if (authToken) {
+        config.headers['Authorization'] = `Bearer ${authToken}`;
       }
       return config;
     });
-  };
-
-  const handleSetApiKey = () => {
-    localStorage.setItem('scylla_api_key', apiKey);
-    setupAxiosInterceptor(apiKey);
-    setShowApiKeyInput(false);
-    fetchDashboardStats();
   };
 
   const fetchDashboardStats = async () => {
@@ -323,41 +317,43 @@ function App() {
     }
   };
 
+  // Authentication handlers
+  const handleLogin = (authToken: string, user: string) => {
+    setToken(authToken);
+    setUsername(user);
+    setIsAuthenticated(true);
+    localStorage.setItem('scylla_auth_token', authToken);
+    localStorage.setItem('scylla_username', user);
+    setupAxiosInterceptor(authToken);
+    fetchDashboardStats();
+    fetchKeyspaces();
+  };
+
+  const handleLogout = () => {
+    setToken('');
+    setUsername('');
+    setIsAuthenticated(false);
+    localStorage.removeItem('scylla_auth_token');
+    localStorage.removeItem('scylla_username');
+    setView('dashboard');
+  };
+
   useEffect(() => {
-    if (apiKey && !showApiKeyInput) {
+    if (isAuthenticated) {
       fetchDashboardStats();
       fetchKeyspaces();
     }
-  }, [apiKey, showApiKeyInput]);
+  }, [isAuthenticated]);
 
-  if (showApiKeyInput) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <div className="bg-white p-8 rounded-lg shadow-md w-96">
-          <div className="flex items-center gap-2 mb-4">
-            <Key className="w-6 h-6 text-blue-600" />
-            <h2 className="text-xl font-bold text-gray-800">API Key Required</h2>
-          </div>
-          <p className="text-gray-600 mb-4">Enter your API key to access ScyllaDB</p>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Enter API key..."
-            className="w-full p-3 border border-gray-300 rounded mb-4"
-            onKeyPress={(e) => e.key === 'Enter' && handleSetApiKey()}
-          />
-          <button
-            onClick={handleSetApiKey}
-            className="w-full bg-blue-600 text-white py-3 rounded hover:bg-blue-700"
-          >
-            Connect
-          </button>
-          <p className="text-xs text-gray-500 mt-4">Leave empty if authentication is disabled</p>
-        </div>
-      </div>
-    );
+  // Show login/signup if not authenticated
+  if (!isAuthenticated) {
+    if (authView === 'login') {
+      return <Login onLogin={handleLogin} onSwitchToSignup={() => setAuthView('signup')} />;
+    } else {
+      return <Signup onSignup={handleLogin} onSwitchToLogin={() => setAuthView('login')} />;
+    }
   }
+
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -366,15 +362,19 @@ function App() {
         <div className="p-4 border-b border-gray-200">
           <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
             <Database className="w-6 h-6 text-blue-600" />
-            ScyllaDB Client
+            Scylla DB Client
           </h1>
-          <button
-            onClick={() => setShowApiKeyInput(true)}
-            className="mt-2 text-xs text-blue-600 hover:underline flex items-center gap-1"
-          >
-            <Key className="w-3 h-3" />
-            Change API Key
-          </button>
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-sm text-gray-600">@{username}</span>
+            <button
+              onClick={handleLogout}
+              className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1 font-medium"
+              title="Logout"
+            >
+              <LogOut className="w-3 h-3" />
+              Logout
+            </button>
+          </div>
         </div>
 
         <div className="p-2">

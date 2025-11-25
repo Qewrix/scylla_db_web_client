@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from database import get_session
-from auth import get_api_key
+from auth import get_current_user
 
 router = APIRouter(prefix="/explorer", tags=["explorer"])
 
 
 @router.get("/stats")
-async def get_system_stats(api_key: str = Depends(get_api_key)) -> Dict[str, Any]:
+async def get_system_stats(current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """Get system-wide statistics."""
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
@@ -63,7 +63,7 @@ async def get_system_stats(api_key: str = Depends(get_api_key)) -> Dict[str, Any
 
 
 @router.get("/keyspaces")
-async def list_keyspaces(api_key: str = Depends(get_api_key)) -> List[str]:
+async def list_keyspaces(current_user: dict = Depends(get_current_user)) -> List[str]:
     """List all keyspaces in the cluster."""
     session = get_session()
     try:
@@ -77,7 +77,7 @@ async def list_keyspaces(api_key: str = Depends(get_api_key)) -> List[str]:
 
 
 @router.get("/keyspaces/{keyspace}/tables")
-async def list_tables(keyspace: str, api_key: str = Depends(get_api_key)) -> List[str]:
+async def list_tables(keyspace: str, current_user: dict = Depends(get_current_user)) -> List[str]:
     """List all tables in a keyspace."""
     session = get_session()
     try:
@@ -92,7 +92,7 @@ async def list_tables(keyspace: str, api_key: str = Depends(get_api_key)) -> Lis
 
 
 @router.get("/keyspaces/{keyspace}/tables/{table}")
-async def get_table_schema(keyspace: str, table: str, api_key: str = Depends(get_api_key)) -> Dict[str, Any]:
+async def get_table_schema(keyspace: str, table: str, current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """Get schema information for a specific table."""
     session = get_session()
     try:
@@ -138,17 +138,18 @@ async def get_table_schema(keyspace: str, table: str, api_key: str = Depends(get
 async def get_table_rows(
     keyspace: str,
     table: str,
-    page_size: int = 100,
+    limit: int = 100,
     page_state: str = None,
     where_clause: str = None,
     order_by: str = None,
     allow_filtering: bool = False,
-    api_key: str = Depends(get_api_key)
+    current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """Get rows from a table with pagination, filtering, and sorting support."""
     session = get_session()
     try:
-        # Validate page_size
+        # Validate page_size (renamed from limit for consistency)
+        page_size = limit
         if page_size not in [20, 50, 100]:
             page_size = 100
         
@@ -263,7 +264,7 @@ async def get_table_count(
     table: str, 
     where_clause: str = None,
     allow_filtering: bool = False,
-    api_key: str = Depends(get_api_key)
+    current_user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """Estimate the row count for a table, optionally with filters applied."""
     session = get_session()

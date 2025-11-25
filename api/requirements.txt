@@ -4,3 +4,5 @@ cassandra-driver>=3.28.0
 pydantic>=2.0.0
 python-multipart
 python-dotenv>=1.0.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
