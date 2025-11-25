@@ -74,6 +74,7 @@ All implementation details documented in `/api/reports/`:
 4. `4_enhanced_frontend_ui.md`
 5. `5_codebase_sanitization.md`
 6. `6_table_sorting_filtering.md`
+7. `7_server_side_filtering_sorting.md`
 
 ## Post-Implementation Notes
 - Environment variables properly configured for both dev and production

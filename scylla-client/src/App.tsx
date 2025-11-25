@@ -56,10 +56,15 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Sorting and filtering state
+  // Client-side sorting and filtering state (for current page)
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [filterText, setFilterText] = useState<string>('');
+  const [quickFilter, setQuickFilter] = useState<string>('');
+
+  // Server-side filtering and sorting state (database queries)
+  const [whereClause, setWhereClause] = useState<string>('');
+  const [orderBy, setOrderBy] = useState<string>('');
+  const [allowFiltering, setAllowFiltering] = useState<boolean>(false);
 
   // Load API key from localStorage on mount
   useEffect(() => {
@@ -126,15 +131,26 @@ function App() {
     }
   };
 
-  const fetchTableData = async (keyspace: string, table: string, pageState: string | null = null) => {
+  const fetchTableData = async (keyspace: string, table: string, pageState: string | null = null, applyFilters: boolean = false) => {
     setLoading(true);
     setError(null);
     try {
+      // Build query parameters
+      const params: any = {
+        page_size: pageSize,
+        page_state: pageState || undefined
+      };
+
+      // Add server-side filters if applying
+      if (applyFilters) {
+        if (whereClause) params.where_clause = whereClause;
+        if (orderBy) params.order_by = orderBy;
+        if (allowFiltering) params.allow_filtering = true;
+      }
+
       const [schemaRes, rowsRes, countRes] = await Promise.all([
         axios.get(`${API_BASE}/explorer/keyspaces/${keyspace}/tables/${table}`),
-        axios.get(`${API_BASE}/explorer/keyspaces/${keyspace}/tables/${table}/rows`, {
-          params: { page_size: pageSize, page_state: pageState }
-        }),
+        axios.get(`${API_BASE}/explorer/keyspaces/${keyspace}/tables/${table}/rows`, { params }),
         axios.get(`${API_BASE}/explorer/keyspaces/${keyspace}/tables/${table}/count`)
       ]);
 
@@ -143,6 +159,25 @@ function App() {
       setRowCount(countRes.data.estimated_count);
       setCurrentPageState(pageState);
       setView('explorer');
+      setQueryResult(null);
+
+      // Auto-populate CQL query with actual executed query
+      let cqlQuery = rowsRes.data.query_executed || `SELECT * FROM ${keyspace}.${table}`;
+      if (!cqlQuery.includes('LIMIT')) {
+        cqlQuery += ` LIMIT ${pageSize}`;
+      }
+      cqlQuery += ';';
+      setQuery(cqlQuery);
+
+      // Reset client-side sorting and filtering for new table
+      if (!pageState && !applyFilters) {
+        setSortColumn(null);
+        setSortDirection('asc');
+        setQuickFilter('');
+        setWhereClause('');
+        setOrderBy('');
+        setAllowFiltering(false);
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message);
     } finally {
@@ -202,16 +237,16 @@ function App() {
 
     let rows = [...tableData.rows];
 
-    // Apply filtering
-    if (filterText) {
+    // Apply client-side quick filtering
+    if (quickFilter) {
       rows = rows.filter(row =>
         Object.values(row).some(val =>
-          String(val).toLowerCase().includes(filterText.toLowerCase())
+          String(val).toLowerCase().includes(quickFilter.toLowerCase())
         )
       );
     }
 
-    // Apply sorting
+    // Apply client-side sorting
     if (sortColumn) {
       rows.sort((a, b) => {
         const aVal = a[sortColumn];
@@ -555,10 +590,10 @@ function App() {
                       </h3>
                       <input
                         type="text"
-                        value={filterText}
-                        onChange={(e) => setFilterText(e.target.value)}
-                        placeholder="Filter rows..."
-                        className="px-3 py-1 text-sm border border-gray-300 rounded flex-1 max-w-xs"
+                        value={quickFilter}
+                        onChange={(e) => setQuickFilter(e.target.value)}
+                        placeholder="Quick filter (current page only)..."
+                        className="px-3 py-1 text-sm border border-gray-300 rounded flex-1 max-w-md"
                       />
                     </div>
                     <div className="flex gap-2">
@@ -583,8 +618,8 @@ function App() {
                       <thead className="bg-gray-50">
                         <tr>
                           {selectedTable.columns.map(col => (
-                            <th 
-                              key={col.name} 
+                            <th
+                              key={col.name}
                               className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 select-none"
                               onClick={() => handleSort(col.name)}
                             >

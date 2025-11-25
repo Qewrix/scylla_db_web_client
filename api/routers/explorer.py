@@ -132,8 +132,73 @@ async def get_table_rows(
     table: str,
     page_size: int = 100,
     page_state: str = None,
+    where_clause: str = None,
+    order_by: str = None,
+    allow_filtering: bool = False,
     api_key: str = Depends(get_api_key)
 ) -> Dict[str, Any]:
+    """Get rows from a table with pagination, filtering, and sorting support."""
+    session = get_session()
+    try:
+        # Validate page_size
+        if page_size not in [20, 50, 100]:
+            page_size = 100
+        
+        # Build query
+        query = f"SELECT * FROM {keyspace}.{table}"
+        
+        # Add WHERE clause if provided
+        if where_clause:
+            query += f" WHERE {where_clause}"
+        
+        # Add ORDER BY if provided
+        if order_by:
+            query += f" ORDER BY {order_by}"
+        
+        # Add ALLOW FILTERING if requested
+        if allow_filtering and (where_clause or order_by):
+            query += " ALLOW FILTERING"
+        
+        # Prepare statement for pagination
+        statement = session.prepare(query)
+        statement.fetch_size = page_size
+        
+        # Execute with page state if provided
+        if page_state:
+            import base64
+            decoded_state = base64.b64decode(page_state)
+            result = session.execute(statement, paging_state=decoded_state)
+        else:
+            result = session.execute(statement)
+        
+        # Convert rows to list of dicts
+        rows = []
+        for row in result.current_rows:
+            row_dict = {}
+            for key in row._fields:
+                value = getattr(row, key)
+                # Convert non-serializable types to strings
+                row_dict[key] = str(value) if value is not None else None
+            rows.append(row_dict)
+        
+        # Get next page state
+        next_page_state = None
+        if result.paging_state:
+            import base64
+            next_page_state = base64.b64encode(result.paging_state).decode('utf-8')
+        
+        return {
+            "keyspace": keyspace,
+            "table": table,
+            "rows": rows,
+            "page_size": page_size,
+            "has_more": result.has_more_pages,
+            "next_page_state": next_page_state,
+            "count": len(rows),
+            "query_executed": query
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     """Get rows from a table with pagination support."""
     session = get_session()
     try:
