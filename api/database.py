@@ -49,9 +49,20 @@ def get_session() -> Session:
         # Direct connection for production
         scylla_host = os.getenv("SCYLLA_HOST", "localhost")
         scylla_port = int(os.getenv("SCYLLA_PORT", "9042"))
+        
+        # Build contact points list with fallback to common Docker IPs
         contact_points = [(scylla_host, scylla_port)]
+        
+        # If localhost is configured, also try common Docker network IPs as fallback
+        if scylla_host in ("localhost", "127.0.0.1"):
+            contact_points.extend([
+                ("172.27.0.2", scylla_port),  # Common Docker network IP
+                ("172.27.0.3", scylla_port),
+                ("172.27.0.4", scylla_port),
+            ])
+        
         proxy_mapping = None
-        logger.info(f"Using direct connection to {scylla_host}:{scylla_port}")
+        logger.info(f"Using direct connection, will try: {contact_points}")
 
     # Try each contact point
     for host, port in contact_points:
