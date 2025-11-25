@@ -159,8 +159,8 @@ async def get_table_rows(
         if where_clause:
             query += f" WHERE {where_clause}"
         
-        # Add ORDER BY if provided
-        if order_by:
+        # Add ORDER BY if provided (only when WHERE clause exists, as ORDER BY requires partition key filtering)
+        if order_by and where_clause:
             query += f" ORDER BY {order_by}"
         
         # Add ALLOW FILTERING if requested

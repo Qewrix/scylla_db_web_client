@@ -160,20 +160,20 @@ function App() {
         }
 
         params.where_clause = whereClause;
-        if (allowFiltering) params.allow_filtering = true;
+        params.allow_filtering = true; // Auto-enable for any filtering
       }
 
       // Add ORDER BY if provided
       if (applyFilters && orderByColumn) {
         params.order_by = `${orderByColumn} ${orderByDirection}`;
-        if (allowFiltering) params.allow_filtering = true;
+        params.allow_filtering = true; // Auto-enable for sorting
       }
 
       // Build count params with same filters
       const countParams: any = {};
       if (whereClause) {
         countParams.where_clause = whereClause;
-        if (allowFiltering) countParams.allow_filtering = true;
+        countParams.allow_filtering = true; // Auto-enable for filtering
       }
 
       const [schemaRes, rowsRes, countRes] = await Promise.all([
