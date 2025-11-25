@@ -89,6 +89,14 @@ All implementation details documented in `/api/reports/`:
   - Optimized dashboard performance with parallel queries
   - Enhanced pagination info display
 
+### 9. Client-Side Sorting (2025-11-25)
+- [9_client_side_sorting.md](./9_client_side_sorting.md)
+  - Replaced server-side ORDER BY with client-side sorting
+  - Eliminated ScyllaDB clustering column restrictions
+  - Added clickable column headers with sort indicators
+  - Simplified UI by removing sorting dropdowns
+  - Auto-enabled ALLOW FILTERING for all filters
+
 ## Post-Implementation Notes
 - Environment variables properly configured for both dev and production
 - Proxy configuration successfully connecting to remote ScyllaDB cluster

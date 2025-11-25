@@ -524,7 +524,7 @@ function App() {
                 </div>
               </div>
 
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">Keyspaces</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">Application Keyspaces</h3>
               <div className="grid grid-cols-3 gap-4">
                 {stats.keyspaces.filter(ks => !ks.is_system).map(ks => (
                   <div
