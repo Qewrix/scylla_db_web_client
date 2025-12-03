@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Database, Table, Play, ChevronRight, ChevronDown, Home, LogOut, RefreshCw } from 'lucide-react';
+import { Database, Table, Play, ChevronRight, ChevronDown, Home, LogOut, RefreshCw, Edit2, Trash2, Check, X } from 'lucide-react';
 import axios from 'axios';
 import { Login } from './components/Login';
 import { Signup } from './components/Signup';
@@ -59,6 +59,12 @@ function App() {
   const [queryResult, setQueryResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Row selection and edit state
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [editingRow, setEditingRow] = useState<{ index: number; data: TableRow } | null>(null);
+  const [editFormData, setEditFormData] = useState<TableRow>({});
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Server-side filtering state (database queries)
   const [filterColumn, setFilterColumn] = useState<string>('');
@@ -126,6 +132,7 @@ function App() {
   const fetchTableData = async (keyspace: string, table: string, pageState: string | null = null, applyFilters: boolean = false) => {
     setLoading(true);
     setError(null);
+    setSelectedRows(new Set());
     try {
       // Build query parameters
       const params: any = {
@@ -301,6 +308,112 @@ function App() {
     return sorted;
   };
 
+  // Row selection handlers
+  const toggleSelectAll = () => {
+    if (selectedRows.size === tableData?.rows.length) {
+      setSelectedRows(new Set());
+    } else {
+      const allIndices = new Set((tableData?.rows || []).map((_, idx) => idx));
+      setSelectedRows(allIndices);
+    }
+  };
+
+  const toggleRowSelection = (index: number) => {
+    const newSelected = new Set(selectedRows);
+    if (newSelected.has(index)) {
+      newSelected.delete(index);
+    } else {
+      newSelected.add(index);
+    }
+    setSelectedRows(newSelected);
+  };
+
+  const deleteSelectedRows = async () => {
+    if (!selectedTable || selectedRows.size === 0) return;
+
+    setLoading(true);
+    setError(null);
+    setShowDeleteConfirm(false);
+    try {
+      const rowsToDelete = Array.from(selectedRows).map(idx => tableData!.rows[idx]);
+      const primaryKeys = [...selectedTable.partition_keys, ...selectedTable.clustering_keys];
+
+      const deletePayload = rowsToDelete.map(row => {
+        const pk: Record<string, any> = {};
+        primaryKeys.forEach(key => {
+          pk[key] = row[key];
+        });
+        return pk;
+      });
+
+      await axios.delete(`${API_BASE}/explorer/keyspaces/${selectedTable.keyspace}/tables/${selectedTable.table}/rows`, {
+        data: { rows: deletePayload }
+      });
+
+      // Refresh table data
+      setSelectedRows(new Set());
+      await fetchTableData(selectedTable.keyspace, selectedTable.table, currentPageState);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEditRow = (index: number) => {
+    const row = getSortedTableData()[index];
+    setEditingRow({ index, data: row });
+    setEditFormData({ ...row });
+  };
+
+  const cancelEdit = () => {
+    setEditingRow(null);
+    setEditFormData({});
+  };
+
+  const updateEditFormField = (field: string, value: string) => {
+    setEditFormData({ ...editFormData, [field]: value });
+  };
+
+  const saveEditRow = async () => {
+    if (!selectedTable || !editingRow) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const primaryKeys = [...selectedTable.partition_keys, ...selectedTable.clustering_keys];
+      const pk: Record<string, any> = {};
+      primaryKeys.forEach(key => {
+        pk[key] = editingRow.data[key];
+      });
+
+      const updates: Record<string, any> = {};
+      Object.keys(editFormData).forEach(key => {
+        if (!primaryKeys.includes(key) && editFormData[key] !== editingRow.data[key]) {
+          updates[key] = editFormData[key];
+        }
+      });
+
+      if (Object.keys(updates).length === 0) {
+        setError('No changes detected');
+        return;
+      }
+
+      await axios.put(`${API_BASE}/explorer/keyspaces/${selectedTable.keyspace}/tables/${selectedTable.table}/rows`, {
+        primary_key: pk,
+        updates
+      });
+
+      // Refresh table data
+      cancelEdit();
+      await fetchTableData(selectedTable.keyspace, selectedTable.table, currentPageState);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const executeQuery = async () => {
     setLoading(true);
     setError(null);
@@ -395,7 +508,7 @@ function App() {
                   <ChevronRight className="w-4 h-4" />
                 )}
                 <Database className="w-4 h-4 text-blue-600" />
-                <span className="font-medium text-gray-700 truncate">{keyspace}</span>
+                <span className="font-medium text-gray-700 truncate" title={keyspace}>{keyspace}</span>
               </button>
               {expandedKeyspaces.has(keyspace) && tables[keyspace] && (
                 <div className="ml-6">
@@ -406,7 +519,7 @@ function App() {
                       className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100 rounded"
                     >
                       <Table className="w-4 h-4 text-green-600" />
-                      <span className="text-gray-600 truncate">{table}</span>
+                      <span className="text-gray-600 truncate" title={table}>{table}</span>
                     </button>
                   ))}
                 </div>
@@ -437,7 +550,7 @@ function App() {
                   <ChevronRight className="w-4 h-4" />
                 )}
                 <Database className="w-4 h-4 text-gray-400" />
-                <span className="font-medium text-gray-500 truncate">{keyspace}</span>
+                <span className="font-medium text-gray-500 truncate" title={keyspace}>{keyspace}</span>
               </button>
               {expandedKeyspaces.has(keyspace) && tables[keyspace] && (
                 <div className="ml-6">
@@ -448,7 +561,7 @@ function App() {
                       className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-100 rounded"
                     >
                       <Table className="w-4 h-4 text-gray-400" />
-                      <span className="text-gray-500 truncate">{table}</span>
+                      <span className="text-gray-500 truncate" title={table}>{table}</span>
                     </button>
                   ))}
                 </div>
@@ -737,10 +850,34 @@ function App() {
                       </button>
                     </div>
                   </div>
+                  {/* Bulk Actions Toolbar */}
+                  {selectedRows.size > 0 && (
+                    <div className="bg-blue-50 p-2 mb-2 rounded flex items-center justify-between border border-blue-100">
+                      <span className="text-sm text-blue-700 font-medium">
+                        {selectedRows.size} row{selectedRows.size !== 1 ? 's' : ''} selected
+                      </span>
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="flex items-center gap-1 px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete Selected
+                      </button>
+                    </div>
+                  )}
+
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 text-sm">
                       <thead className="bg-gray-50">
                         <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-10">
+                            <input
+                              type="checkbox"
+                              checked={tableData.rows.length > 0 && selectedRows.size === tableData.rows.length}
+                              onChange={toggleSelectAll}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </th>
                           {selectedTable.columns.map(col => (
                             <th
                               key={col.name}
@@ -757,16 +894,36 @@ function App() {
                               </div>
                             </th>
                           ))}
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {getSortedTableData().map((row, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
+                          <tr key={idx} className={`hover:bg-gray-50 ${selectedRows.has(idx) ? 'bg-blue-50' : ''}`}>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <input
+                                type="checkbox"
+                                checked={selectedRows.has(idx)}
+                                onChange={() => toggleRowSelection(idx)}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              />
+                            </td>
                             {selectedTable.columns.map(col => (
                               <td key={col.name} className="px-4 py-2 whitespace-nowrap text-gray-700">
                                 {row[col.name]}
                               </td>
                             ))}
+                            <td className="px-4 py-2 whitespace-nowrap text-right text-sm font-medium">
+                              <button
+                                onClick={() => startEditRow(idx)}
+                                className="text-blue-600 hover:text-blue-900 mr-3"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -778,6 +935,104 @@ function App() {
           )}
         </div>
       </div>
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Delete Rows</h3>
+                  <p className="text-sm text-gray-500">This action cannot be undone</p>
+                </div>
+              </div>
+
+              <p className="text-gray-700 mb-6">
+                Are you sure you want to delete <strong>{selectedRows.size}</strong> row{selectedRows.size !== 1 ? 's' : ''}?
+                This will permanently remove {selectedRows.size !== 1 ? 'them' : 'it'} from the database.
+              </p>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={deleteSelectedRows}
+                  disabled={loading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 flex items-center gap-2 disabled:opacity-50"
+                >
+                  {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  Delete {selectedRows.size !== 1 ? 'Rows' : 'Row'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Row Modal */}
+      {editingRow && selectedTable && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-800">Edit Row</h3>
+              <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="space-y-4">
+                {selectedTable.columns.map(col => {
+                  const isPrimaryKey = selectedTable.partition_keys.includes(col.name) ||
+                    selectedTable.clustering_keys.includes(col.name);
+
+                  return (
+                    <div key={col.name}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        {col.name}
+                        {isPrimaryKey && <span className="text-xs text-blue-600 ml-2">(Primary Key)</span>}
+                        <span className="text-xs text-gray-500 ml-2">({col.type})</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={editFormData[col.name] || ''}
+                        onChange={(e) => updateEditFormField(col.name, e.target.value)}
+                        disabled={isPrimaryKey}
+                        className={`w-full px-3 py-2 border rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 ${isPrimaryKey ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'border-gray-300'
+                          }`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3 rounded-b-lg">
+              <button
+                onClick={cancelEdit}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEditRow}
+                disabled={loading}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+              >
+                {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 }

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 
 from database import get_session
 from auth import get_current_user
@@ -8,11 +9,13 @@ router = APIRouter(prefix="/explorer", tags=["explorer"])
 
 
 @router.get("/stats")
-async def get_system_stats(current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+async def get_system_stats(
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Get system-wide statistics."""
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
-    
+
     session = get_session()
     try:
         # Get all keyspaces
@@ -20,43 +23,42 @@ async def get_system_stats(current_user: dict = Depends(get_current_user)) -> Di
             "SELECT keyspace_name FROM system_schema.keyspaces"
         )
         all_keyspaces = [row.keyspace_name for row in keyspaces_result]
-        
+
         # System keyspaces start with 'system'
-        system_keyspaces = [ks for ks in all_keyspaces if ks.startswith('system')]
-        user_keyspaces = [ks for ks in all_keyspaces if not ks.startswith('system')]
-        
+        system_keyspaces = [ks for ks in all_keyspaces if ks.startswith("system")]
+        user_keyspaces = [ks for ks in all_keyspaces if not ks.startswith("system")]
+
         # Fetch table counts in parallel
         def get_table_count(keyspace_name):
             tables_result = session.execute(
                 "SELECT table_name FROM system_schema.tables WHERE keyspace_name = %s",
-                [keyspace_name]
+                [keyspace_name],
             )
             table_count = len(list(tables_result))
             return {
                 "name": keyspace_name,
                 "table_count": table_count,
-                "is_system": keyspace_name.startswith('system')
+                "is_system": keyspace_name.startswith("system"),
             }
-        
+
         # Run queries in parallel using thread pool
         with ThreadPoolExecutor(max_workers=10) as executor:
             loop = asyncio.get_event_loop()
             keyspace_stats = await loop.run_in_executor(
-                None,
-                lambda: list(executor.map(get_table_count, all_keyspaces))
+                None, lambda: list(executor.map(get_table_count, all_keyspaces))
             )
-        
-        total_tables = sum(ks['table_count'] for ks in keyspace_stats)
-        
+
+        total_tables = sum(ks["table_count"] for ks in keyspace_stats)
+
         # Sort by table count (descending) and name
-        keyspace_stats.sort(key=lambda x: (-x['table_count'], x['name']))
-        
+        keyspace_stats.sort(key=lambda x: (-x["table_count"], x["name"]))
+
         return {
             "total_keyspaces": len(all_keyspaces),
             "total_tables": total_tables,
             "user_keyspaces": len(user_keyspaces),
             "system_keyspaces": len(system_keyspaces),
-            "keyspaces": keyspace_stats
+            "keyspaces": keyspace_stats,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -67,9 +69,7 @@ async def list_keyspaces(current_user: dict = Depends(get_current_user)) -> List
     """List all keyspaces in the cluster."""
     session = get_session()
     try:
-        result = session.execute(
-            "SELECT keyspace_name FROM system_schema.keyspaces"
-        )
+        result = session.execute("SELECT keyspace_name FROM system_schema.keyspaces")
         keyspaces = [row.keyspace_name for row in result]
         return sorted(keyspaces)
     except Exception as e:
@@ -77,13 +77,15 @@ async def list_keyspaces(current_user: dict = Depends(get_current_user)) -> List
 
 
 @router.get("/keyspaces/{keyspace}/tables")
-async def list_tables(keyspace: str, current_user: dict = Depends(get_current_user)) -> List[str]:
+async def list_tables(
+    keyspace: str, current_user: dict = Depends(get_current_user)
+) -> List[str]:
     """List all tables in a keyspace."""
     session = get_session()
     try:
         result = session.execute(
             "SELECT table_name FROM system_schema.tables WHERE keyspace_name = %s",
-            [keyspace]
+            [keyspace],
         )
         tables = [row.table_name for row in result]
         return sorted(tables)
@@ -92,7 +94,9 @@ async def list_tables(keyspace: str, current_user: dict = Depends(get_current_us
 
 
 @router.get("/keyspaces/{keyspace}/tables/{table}")
-async def get_table_schema(keyspace: str, table: str, current_user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+async def get_table_schema(
+    keyspace: str, table: str, current_user: dict = Depends(get_current_user)
+) -> Dict[str, Any]:
     """Get schema information for a specific table."""
     session = get_session()
     try:
@@ -103,32 +107,28 @@ async def get_table_schema(keyspace: str, table: str, current_user: dict = Depen
             FROM system_schema.columns
             WHERE keyspace_name = %s AND table_name = %s
             """,
-            [keyspace, table]
+            [keyspace, table],
         )
-        
+
         columns = []
         partition_keys = []
         clustering_keys = []
-        
+
         for row in columns_result:
-            col_info = {
-                "name": row.column_name,
-                "type": row.type,
-                "kind": row.kind
-            }
+            col_info = {"name": row.column_name, "type": row.type, "kind": row.kind}
             columns.append(col_info)
-            
+
             if row.kind == "partition_key":
                 partition_keys.append(row.column_name)
             elif row.kind == "clustering":
                 clustering_keys.append(row.column_name)
-        
+
         return {
             "keyspace": keyspace,
             "table": table,
             "columns": columns,
             "partition_keys": partition_keys,
-            "clustering_keys": clustering_keys
+            "clustering_keys": clustering_keys,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -143,7 +143,7 @@ async def get_table_rows(
     where_clause: str = None,
     order_by: str = None,
     allow_filtering: bool = False,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Get rows from a table with pagination, filtering, and sorting support."""
     session = get_session()
@@ -152,34 +152,35 @@ async def get_table_rows(
         page_size = limit
         if page_size not in [20, 50, 100]:
             page_size = 100
-        
+
         # Build query
         query = f"SELECT * FROM {keyspace}.{table}"
-        
+
         # Add WHERE clause if provided
         if where_clause:
             query += f" WHERE {where_clause}"
-        
+
         # Add ORDER BY if provided (only when WHERE clause exists, as ORDER BY requires partition key filtering)
         if order_by and where_clause:
             query += f" ORDER BY {order_by}"
-        
+
         # Add ALLOW FILTERING if requested
         if allow_filtering and (where_clause or order_by):
             query += " ALLOW FILTERING"
-        
+
         # Prepare statement for pagination
         statement = session.prepare(query)
         statement.fetch_size = page_size
-        
+
         # Execute with page state if provided
         if page_state:
             import base64
+
             decoded_state = base64.b64decode(page_state)
             result = session.execute(statement, paging_state=decoded_state)
         else:
             result = session.execute(statement)
-        
+
         # Convert rows to list of dicts
         rows = []
         for row in result.current_rows:
@@ -189,13 +190,14 @@ async def get_table_rows(
                 # Convert non-serializable types to strings
                 row_dict[key] = str(value) if value is not None else None
             rows.append(row_dict)
-        
+
         # Get next page state
         next_page_state = None
         if result.paging_state:
             import base64
-            next_page_state = base64.b64encode(result.paging_state).decode('utf-8')
-        
+
+            next_page_state = base64.b64encode(result.paging_state).decode("utf-8")
+
         return {
             "keyspace": keyspace,
             "table": table,
@@ -204,7 +206,7 @@ async def get_table_rows(
             "has_more": result.has_more_pages,
             "next_page_state": next_page_state,
             "count": len(rows),
-            "query_executed": query
+            "query_executed": query,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -214,21 +216,22 @@ async def get_table_rows(
         # Validate page_size
         if page_size not in [20, 50, 100]:
             page_size = 100
-        
+
         query = f"SELECT * FROM {keyspace}.{table}"
-        
+
         # Prepare statement for pagination
         statement = session.prepare(query)
         statement.fetch_size = page_size
-        
+
         # Execute with page state if provided
         if page_state:
             import base64
+
             decoded_state = base64.b64decode(page_state)
             result = session.execute(statement, paging_state=decoded_state)
         else:
             result = session.execute(statement)
-        
+
         # Convert rows to list of dicts
         rows = []
         for row in result.current_rows:
@@ -238,13 +241,14 @@ async def get_table_rows(
                 # Convert non-serializable types to strings
                 row_dict[key] = str(value) if value is not None else None
             rows.append(row_dict)
-        
+
         # Get next page state
         next_page_state = None
         if result.paging_state:
             import base64
-            next_page_state = base64.b64encode(result.paging_state).decode('utf-8')
-        
+
+            next_page_state = base64.b64encode(result.paging_state).decode("utf-8")
+
         return {
             "keyspace": keyspace,
             "table": table,
@@ -252,7 +256,7 @@ async def get_table_rows(
             "page_size": page_size,
             "has_more": result.has_more_pages,
             "next_page_state": next_page_state,
-            "count": len(rows)
+            "count": len(rows),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -260,35 +264,35 @@ async def get_table_rows(
 
 @router.get("/keyspaces/{keyspace}/tables/{table}/count")
 async def get_table_count(
-    keyspace: str, 
-    table: str, 
+    keyspace: str,
+    table: str,
     where_clause: str = None,
     allow_filtering: bool = False,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Estimate the row count for a table, optionally with filters applied."""
     session = get_session()
     try:
         # Build count query
         count_query = f"SELECT COUNT(*) FROM {keyspace}.{table}"
-        
+
         # Add WHERE clause if provided
         if where_clause:
             count_query += f" WHERE {where_clause}"
-        
+
         # Add ALLOW FILTERING if needed
         if allow_filtering and where_clause:
             count_query += " ALLOW FILTERING"
-        
+
         result = session.execute(count_query)
         count = result.one()[0] if result else 0
-        
+
         return {
             "keyspace": keyspace,
             "table": table,
             "estimated_count": count,
             "is_estimate": False,
-            "filtered": where_clause is not None
+            "filtered": where_clause is not None,
         }
     except Exception as e:
         # If COUNT fails, return unknown
@@ -298,5 +302,73 @@ async def get_table_count(
             "estimated_count": 0,
             "is_estimate": True,
             "filtered": where_clause is not None,
-            "error": str(e)
+            "error": str(e),
         }
+
+
+class DeleteRowsRequest(BaseModel):
+    rows: List[Dict[str, Any]]
+
+
+class UpdateRowRequest(BaseModel):
+    primary_key: Dict[str, Any]
+    updates: Dict[str, Any]
+
+
+@router.delete("/keyspaces/{keyspace}/tables/{table}/rows")
+async def delete_rows(
+    keyspace: str,
+    table: str,
+    request: DeleteRowsRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Delete multiple rows from a table."""
+    session = get_session()
+    try:
+        for row in request.rows:
+            where_clauses = []
+            values = []
+            for col, val in row.items():
+                where_clauses.append(f"{col} = %s")
+                values.append(val)
+
+            query = (
+                f"DELETE FROM {keyspace}.{table} WHERE {' AND '.join(where_clauses)}"
+            )
+            session.execute(query, values)
+
+        return {"message": f"Successfully deleted {len(request.rows)} rows"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/keyspaces/{keyspace}/tables/{table}/rows")
+async def update_row(
+    keyspace: str,
+    table: str,
+    request: UpdateRowRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Update a single row in a table."""
+    session = get_session()
+    try:
+        set_clauses = []
+        values = []
+
+        # Add SET clauses
+        for col, val in request.updates.items():
+            set_clauses.append(f"{col} = %s")
+            values.append(val)
+
+        # Add WHERE clauses
+        where_clauses = []
+        for col, val in request.primary_key.items():
+            where_clauses.append(f"{col} = %s")
+            values.append(val)
+
+        query = f"UPDATE {keyspace}.{table} SET {', '.join(set_clauses)} WHERE {' AND '.join(where_clauses)}"
+        session.execute(query, values)
+
+        return {"message": "Successfully updated row"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
