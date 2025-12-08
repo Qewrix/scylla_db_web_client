@@ -15,7 +15,9 @@ load_dotenv()
 DEFAULT_PROXY_HOST = os.getenv("SCYLLA_PROXY_DEFAULT_HOST")
 _default_proxy_port_raw = os.getenv("SCYLLA_PROXY_DEFAULT_PORT")
 try:
-    DEFAULT_PROXY_PORT = int(_default_proxy_port_raw) if _default_proxy_port_raw else None
+    DEFAULT_PROXY_PORT = (
+        int(_default_proxy_port_raw) if _default_proxy_port_raw else None
+    )
 except ValueError:
     logger.warning(
         "Invalid SCYLLA_PROXY_DEFAULT_PORT value '%s'; ignoring the override.",
@@ -26,9 +28,9 @@ except ValueError:
 # Default proxy mapping for development
 # This should be overridden via SCYLLA_PROXY_MAPPING environment variable in production
 DEFAULT_DEV_PROXY_MAPPING: Dict[str, Tuple[str, int]] = {
-    "172.27.0.2": ("localhost", 9037),
-    "172.27.0.3": ("localhost", 9038),
-    "172.27.0.4": ("localhost", 9039),
+    "scylla-node1": ("localhost", 9037),
+    "scylla-node2": ("localhost", 9038),
+    "scylla-node3": ("localhost", 9039),
 }
 
 
@@ -68,7 +70,9 @@ def _load_proxy_mapping() -> Dict[str, Tuple[str, int]]:
         }
         return mapping
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Failed to parse SCYLLA_PROXY_MAPPING (%s); falling back to defaults.", exc)
+        logger.warning(
+            "Failed to parse SCYLLA_PROXY_MAPPING (%s); falling back to defaults.", exc
+        )
         return DEFAULT_DEV_PROXY_MAPPING
 
 
@@ -89,7 +93,8 @@ class ProxyAddressTranslator(AddressTranslator):
 
     def __init__(self, mapping: Dict[str, Tuple[str, int]]):
         self._mapping = {
-            _normalize_address(key): (value[0], value[1]) for key, value in mapping.items()
+            _normalize_address(key): (value[0], value[1])
+            for key, value in mapping.items()
         }
 
     def translate(self, address):
@@ -108,15 +113,20 @@ class ProxyEndPointFactory(DefaultEndPointFactory):
     connects through the remote nginx TCP proxies instead of the private network.
     """
 
-    def __init__(self, mapping: Dict[str, Tuple[str, int]], default_port: int | None = None):
+    def __init__(
+        self, mapping: Dict[str, Tuple[str, int]], default_port: int | None = None
+    ):
         super().__init__(port=default_port)
         normalized_mapping = {
-            _normalize_address(key): (value[0], value[1]) for key, value in mapping.items()
+            _normalize_address(key): (value[0], value[1])
+            for key, value in mapping.items()
         }
         endpoint_counts: Dict[Tuple[str, int], int] = {}
         for endpoint in normalized_mapping.values():
             endpoint_counts[endpoint] = endpoint_counts.get(endpoint, 0) + 1
-        duplicates = [endpoint for endpoint, count in endpoint_counts.items() if count > 1]
+        duplicates = [
+            endpoint for endpoint, count in endpoint_counts.items() if count > 1
+        ]
         if duplicates:
             logger.warning(
                 "Multiple Scylla peers resolve to the same proxy endpoint(s) %s. "
@@ -126,7 +136,9 @@ class ProxyEndPointFactory(DefaultEndPointFactory):
         self._mapping = normalized_mapping
 
     def create(self, row):
-        from cassandra.metadata import _NodeInfo  # Imported lazily to avoid heavy import up front
+        from cassandra.metadata import (
+            _NodeInfo,
+        )  # Imported lazily to avoid heavy import up front
 
         addr = _NodeInfo.get_broadcast_rpc_address(row)
         port = _NodeInfo.get_broadcast_rpc_port(row)
@@ -147,7 +159,11 @@ class ProxyEndPointFactory(DefaultEndPointFactory):
             port = mapped_port
 
         # Always prefer explicit mapping/default; only fall back to translator if needed
-        translated_host = mapped_host or DEFAULT_PROXY_HOST or self.cluster.address_translator.translate(addr)
+        translated_host = (
+            mapped_host
+            or DEFAULT_PROXY_HOST
+            or self.cluster.address_translator.translate(addr)
+        )
 
         # Debug trace to help diagnose connectivity issues
         try:
