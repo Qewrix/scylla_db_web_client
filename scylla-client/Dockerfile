@@ -15,7 +15,7 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Production stage
+# Production stage - use serve to host static files
 FROM node:20-alpine AS production
 
 WORKDIR /app
@@ -24,11 +24,8 @@ WORKDIR /app
 ENV HOST=0.0.0.0
 ENV PORT=3009
 
-# Copy package files
-COPY package*.json ./
-
-# Install only production dependencies
-RUN npm ci --only=production
+# Install serve globally
+RUN npm install -g serve
 
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
@@ -36,5 +33,5 @@ COPY --from=builder /app/dist ./dist
 # Expose the port
 EXPOSE ${PORT}
 
-# Run the preview server using HOST and PORT from env
-CMD ["sh", "-c", "npm run preview -- --host ${HOST} --port ${PORT}"]
+# Serve the static files
+CMD ["sh", "-c", "serve -s dist -l tcp://${HOST}:${PORT}"]
