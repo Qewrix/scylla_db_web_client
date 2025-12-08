@@ -9,7 +9,7 @@ COPY package*.json ./
 # Install dependencies
 RUN npm ci
 
-# Copy source code
+# Copy source code (including .env for Vite to pick up VITE_* vars at build time)
 COPY . .
 
 # Build the application
