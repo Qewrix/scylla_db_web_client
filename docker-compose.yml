@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: scylla-api
+    restart: always
+    ports:
+      - "${PORT:-8049}:${PORT:-8049}"
+    env_file:
+      - ./api/.env
+      - ./api/.env.local
+    networks:
+      - scylla-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8049}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./scylla-client
+      dockerfile: Dockerfile
+    container_name: scylla-frontend
+    restart: always
+    ports:
+      - "${PORT:-3009}:${PORT:-3009}"
+    env_file:
+      - ./scylla-client/.env
+      - ./scylla-client/.env.local
+    depends_on:
+      - api
+    networks:
+      - scylla-network
+
+networks:
+  scylla-network:
+    driver: bridge
