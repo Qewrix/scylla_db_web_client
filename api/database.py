@@ -46,21 +46,31 @@ def get_session() -> Session:
         proxy_mapping = DEV_PROXY_MAPPING
         logger.info(f"Using dev proxy contact points: {contact_points}")
     else:
-        # Direct connection for production
-        scylla_host = os.getenv("SCYLLA_HOST", "localhost")
-        scylla_port = int(os.getenv("SCYLLA_PORT", "9042"))
-        
-        # Build contact points list with fallback to common Docker IPs
-        contact_points = [(scylla_host, scylla_port)]
-        
-        # If localhost is configured, also try common Docker network IPs as fallback
-        if scylla_host in ("localhost", "127.0.0.1"):
-            contact_points.extend([
-                ("172.27.0.2", scylla_port),  # Common Docker network IP
-                ("172.27.0.3", scylla_port),
-                ("172.27.0.4", scylla_port),
-            ])
-        
+        # Direct connection for production - load from .env, no fallbacks
+        scylla_host = os.getenv("SCYLLA_HOST")
+        scylla_port = os.getenv("SCYLLA_PORT")
+        scylla_contact_points = os.getenv("SCYLLA_CONTACT_POINTS")
+
+        if scylla_contact_points:
+            # Parse comma-separated list of host:port pairs
+            # Format: "host1:port1,host2:port2,host3:port3"
+            contact_points = []
+            for cp in scylla_contact_points.split(","):
+                cp = cp.strip()
+                if ":" in cp:
+                    host, port = cp.rsplit(":", 1)
+                    contact_points.append((host, int(port)))
+                else:
+                    contact_points.append(
+                        (cp, int(scylla_port) if scylla_port else 9042)
+                    )
+        elif scylla_host and scylla_port:
+            contact_points = [(scylla_host, int(scylla_port))]
+        else:
+            raise RuntimeError(
+                "SCYLLA_HOST and SCYLLA_PORT (or SCYLLA_CONTACT_POINTS) must be set in .env for production"
+            )
+
         proxy_mapping = None
         logger.info(f"Using direct connection, will try: {contact_points}")
 
@@ -78,8 +88,12 @@ def get_session() -> Session:
 
             # Add proxy configuration if in dev mode
             if proxy_mapping is not None:
-                cluster_kwargs["address_translator"] = ProxyAddressTranslator(proxy_mapping)
-                cluster_kwargs["endpoint_factory"] = ProxyEndPointFactory(proxy_mapping, default_port=port)
+                cluster_kwargs["address_translator"] = ProxyAddressTranslator(
+                    proxy_mapping
+                )
+                cluster_kwargs["endpoint_factory"] = ProxyEndPointFactory(
+                    proxy_mapping, default_port=port
+                )
 
             _cluster = Cluster(**cluster_kwargs)
             _session = _cluster.connect()
@@ -90,7 +104,9 @@ def get_session() -> Session:
             continue
 
     if _session is None:
-        raise RuntimeError("Unable to connect to ScyllaDB with the configured contact points")
+        raise RuntimeError(
+            "Unable to connect to ScyllaDB with the configured contact points"
+        )
 
     return _session
 
@@ -105,4 +121,3 @@ def close_session():
         _cluster.shutdown()
         _cluster = None
     logger.info("ScyllaDB session closed")
-
